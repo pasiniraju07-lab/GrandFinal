@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wristband Sentinel — Unique Alert Dashboard</title>
+<style>
+  :root{
+    --bg:#0f1724; --card:#0b1220; --accent:#ff6b35; --muted:#98a0b3; --ok:#2dd4bf;
+    --glass: rgba(255,255,255,0.03);
+    font-family: Inter, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:linear-gradient(180deg,#071020 0%, #071827 60%);
+    color:#e6eef8; min-height:100vh;
+    padding:24px;
+  }
+  header{display:flex;align-items:center;gap:16px;margin-bottom:18px}
+  header h1{font-size:18px;margin:0}
+  .layout{display:grid;grid-template-columns:360px 1fr 360px;gap:18px}
+  .card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(3,8,18,0.6)}
+  .section-title{font-weight:600;color:var(--muted);font-size:12px;margin-bottom:8px}
+  /* device list */
+  .device{display:flex;align-items:center;gap:12px;padding:10px;border-radius:8px;background:var(--glass);margin-bottom:10px}
+  .dot{width:12px;height:12px;border-radius:50%}
+  .dot.online{background:var(--ok);box-shadow:0 0 8px rgba(45,212,191,0.15)}
+  .dot.offline{background:#5b6474}
+  .device .meta{flex:1;text-align:left}
+  .device .meta .name{font-weight:600}
+  .device small{color:var(--muted)}
+  button{background:linear-gradient(180deg,var(--accent),#d94b23);border:0;padding:8px 12px;border-radius:8px;color:white;cursor:pointer}
+  button.ghost{background:transparent;border:1px solid rgba(255,255,255,0.06)}
+  .actions{display:flex;gap:8px;flex-wrap:wrap}
+  /* center panel */
+  .center-top{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+  .status-pill{padding:10px 14px;border-radius:14px;font-weight:700}
+  .status-safe{background:#0f1724;color:var(--ok);border:1px solid rgba(45,212,191,0.08)}
+  .status-alert{background:#2a0b0b;color:#ffdede;border:1px solid rgba(255,107,53,0.12)}
+  #map{height:300px;border-radius:10px;background:linear-gradient(180deg,#0a1220,#06101a);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  /* timeline */
+  .timeline{max-height:240px;overflow:auto;padding-top:6px}
+  .event{padding:10px;border-radius:8px;margin-bottom:8px;background:rgba(255,255,255,0.02);display:flex;justify-content:space-between}
+  .event .left{flex:1}
+  .event .time{color:var(--muted);font-size:12px}
+  /* large SOS */
+  .sos-wrap{display:flex;flex-direction:column;align-items:center;gap:12px;}
+  .pulse{
+    width:120px;height:120px;border-radius:50%;display:grid;place-items:center;position:relative;
+    background:radial-gradient(circle at 30% 30%, rgba(255,107,53,0.2), transparent 30%);
+    box-shadow:0 12px 30px rgba(255,107,53,0.06);
+  }
+  .pulse button{width:84px;height:84px;border-radius:50%;font-size:18px}
+  /* pairing */
+  canvas#qr{width:100%;height:140px;background:linear-gradient(180deg,#081119,#06121b);border-radius:8px}
+  footer{margin-top:14px;color:var(--muted);font-size:12px;text-align:center}
+  @media(max-width:1000px){
+    .layout{grid-template-columns:1fr; padding-bottom:120px}
+    #map{height:220px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="width:48px;height:48px;border-radius:10px;background:linear-gradient(180deg,#0b2a3a,#072033);display:grid;place-items:center">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none"><path d="M12 2v6" stroke="#ff6b35" stroke-width="1.6" stroke-linecap="round"/><path d="M6 9c0 3-2 6-2 9 0 1.5 3 2 8 2s8-.5 8-2c0-3-2-6-2-9" stroke="#e6eef8" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div>
+    <h1>Wristband Sentinel</h1>
+    <div style="color:var(--muted);font-size:13px">Tourist wristband alert & rescue dashboard — simulation</div>
+  </div>
+</header>
+
+<div class="layout">
+
+  <!-- left column: devices & pairing -->
+  <aside class="card">
+    <div class="section-title">Paired Wristbands</div>
+    <div id="devices">
+      <!-- devices inserted by JS -->
+    </div>
+
+    <div style="margin-top:12px" class="section-title">Pair New Wristband</div>
+    <canvas id="qr"></canvas>
+    <div style="display:flex;gap:8px;margin-top:10px;">
+      <button onclick="generatePairCode()">Generate Code</button>
+      <button class="ghost" onclick="simulatePair()">Simulate Pair</button>
+    </div>
+    <div style="margin-top:12px" class="section-title">Settings</div>
+    <div style="display:flex;flex-direction:column;gap:8px">
+      <label style="color:var(--muted);font-size:13px">Auto-escalation</label>
+      <select id="escalationDelay">
+        <option value="0">Off</option>
+        <option value="15">15s</option>
+        <option value="30" selected>30s</option>
+        <option value="60">60s</option>
+      </select>
+      <label style="color:var(--muted);font-size:13px">Primary Contact</label>
+      <input id="primaryContact" placeholder="+91 98xxxxxxx" style="padding:8px;border-radius:8px;border:0;background:rgba(255,255,255,0.02);color:inherit" />
+      <small style="color:var(--muted)">Contact will be called/sms when emergency escalates (placeholder)</small>
+    </div>
+
+  </aside>
+
+  <!-- center: map + timeline + controls -->
+  <main class="card">
+    <div class="center-top">
+      <div class="status-pill status-safe" id="globalStatus">All systems nominal</div>
+      <div style="flex:1"></div>
+      <div class="actions">
+        <button onclick="simulateWarning()">Simulate Warning</button>
+        <button onclick="simulateEmergency()">Simulate Emergency</button>
+        <button class="ghost" onclick="clearAll()">Clear</button>
+      </div>
+    </div>
+
+    <div id="map">Map disabled — click <a href="#" onclick="locateMe(event)">Locate</a> to pin a device.</div>
+
+    <div style="display:flex;gap:12px;margin-top:12px">
+      <div style="flex:1" class="card" id="mini-stats">
+        <div class="section-title">Quick Stats</div>
+        <div style="display:flex;gap:12px">
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:20px" id="statDevices">0</div>
+            <div style="color:var(--muted)">Devices</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:20px" id="statAlerts">0</div>
+            <div style="color:var(--muted)">Active Alerts</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="width:320px" class="card">
+        <div class="section-title">Live Timeline</div>
+        <div class="timeline" id="timeline"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- right column: SOS & actions -->
+  <aside class="card">
+    <div class="section-title">SOS Center</div>
+    <div class="sos-wrap">
+      <div class="pulse" id="pulseWrap">
+        <button id="sosBtn" onclick="triggerSOS()" style="background:#ff6b35;border:0;color:white;font-weight:700">SOS</button>
+      </div>
+      <div style="text-align:center;color:var(--muted)">Hold or press to send immediate help</div>
+
+      <div style="width:100%" class="card">
+        <div class="section-title">Actions</div>
+        <div style="display:flex;flex-direction:column;gap:8px">
+          <button onclick="callPrimary()">Call Primary Contact</button>
+          <button class="ghost" onclick="sendSMS()">Send SMS (placeholder)</button>
+          <button class="ghost" onclick="shareLocation()">Share Location</button>
+        </div>
+      </div>
+
+      <div style="width:100%" class="card">
+        <div class="section-title">Logs</div>
+        <div style="font-size:12px;color:var(--muted)">Event logs are stored in the browser console (for demo)</div>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<footer>Prototype · Not for real-world emergency use. Replace placeholders with real APIs (telephony / SMS / IoT backend).</footer>
+
+<script>
+/* ----------------------------
+   Demo data + utility helpers
+   ---------------------------- */
+const devicesEl = document.getElementById('devices');
+const timelineEl = document.getElementById('timeline');
+const statDevices = document.getElementById('statDevices');
+const statAlerts = document.getElementById('statAlerts');
+const globalStatus = document.getElementById('globalStatus');
+const qrCanvas = document.getElementById('qr');
+
+let devices = [
+  { id: 'WB-001', name: 'Wristband — Arjun', online:true, lat: null, lon: null },
+  { id: 'WB-002', name: 'Wristband — Leena', online:true, lat: null, lon: null },
+];
+let activeAlerts = 0;
+
+/* render devices list */
+function renderDevices(){
+  devicesEl.innerHTML = '';
+  devices.forEach(d=>{
+    const div = document.createElement('div'); div.className='device';
+    div.innerHTML = `
+      <div style="width:46px;height:46px;border-radius:8px;background:linear-gradient(180deg,#071b2a,#05202b);display:grid;place-items:center;font-weight:700">
+        ${d.id.split('-')[1]}
+      </div>
+      <div class="meta">
+        <div class="name">${d.name}</div>
+        <small>${d.id} · ${d.online? 'Online':'Offline'}</small>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <div class="dot ${d.online? 'online':'offline'}"></div>
+        <div style="display:flex;gap:6px">
+          <button class="ghost" onclick="pingDevice('${d.id}')">Ping</button>
+          <button onclick="selectDevice('${d.id}')">Open</button>
+        </div>
+      </div>
+    `;
+    devicesEl.appendChild(div);
+  });
+  statDevices.textContent = devices.length;
+}
+
+/* timeline helper */
+function pushEvent(text, level='info'){
+  const el = document.createElement('div'); el.className='event';
+  el.innerHTML = <div class="left"><div style="font-weight:700">${text}</div><div class="time">${new Date().toLocaleString()}</div></div><div style="color:${level==='danger'? '#ffbdbd' : '#98a0b3'}">${level==='danger'? 'ALERT' : (level==='warn' ? 'WARN':'OK')}</div>;
+  timelineEl.prepend(el);
+  // update metric
+  if(level==='danger') activeAlerts++;
+  if(level!=='info') statAlerts.textContent = activeAlerts;
+  console.log([EVENT] ${text});
+}
+
+/* simulate operations */
+function pingDevice(id){
+  pushEvent(Pinged ${id} — success);
+  alert('Ping sent (simulated). Check console for logs.');
+}
+function selectDevice(id){
+  const d = devices.find(x=>x.id===id);
+  if(!d) return;
+  if(d.lat && d.lon){
+    pushEvent(Opened device ${id} — located at ${d.lat.toFixed(4)}, ${d.lon.toFixed(4)});
+  } else {
+    pushEvent(Opened device ${id} — location unknown);
+  }
+  alert(Device: ${d.name}\nID: ${d.id}\nOnline: ${d.online});
+}
+
+/* simulate incoming signals from a wristband (warning / emergency) */
+function simulateWarning(){
+  globalStatus.className = 'status-pill status-alert';
+  globalStatus.textContent = 'Warning: Hazardous conditions nearby';
+  pushEvent('Warning from WB-002: Flood risk detected', 'warn');
+  // visual pulse
+  flashPulse('#ffb86b');
+}
+function simulateEmergency(){
+  globalStatus.className = 'status-pill status-alert';
+  globalStatus.textContent = 'Emergency: Help required';
+  pushEvent('Emergency from WB-001: SOS button pressed', 'danger');
+  flashPulse('#ff6b35', 3);
+  // escalate if configured
+  scheduleEscalation();
+}
+
+/* SOS button */
+function triggerSOS(){
+  pushEvent('Manual SOS triggered via dashboard (operator)', 'danger');
+  globalStatus.className = 'status-pill status-alert';
+  globalStatus.textContent = 'Emergency: Operator SOS';
+  flashPulse('#ff6b35', 4);
+  // placeholders for call/SMS
+  sendSMS();
+  callPrimary();
+}
+
+/* call / sms placeholders (replace with real APIs) */
+function callPrimary(){
+  const contact = document.getElementById('primaryContact').value || 'Primary contact not set';
+  pushEvent(Calling primary contact: ${contact} (placeholder));
+  alert(Would call: ${contact} (this is a placeholder));
+}
+function sendSMS(){
+  const contact = document.getElementById('primaryContact').value || 'Primary contact not set';
+  pushEvent(Sending SMS to ${contact} (placeholder));
+  alert(Would send SMS to: ${contact} (this is a placeholder));
+}
+function shareLocation(){
+  locateMe();
+  pushEvent('Sharing operator location to primary contact (placeholder)');
+  alert('Location shared (simulated).');
+}
+
+/* locate using browser geolocation and pin to device WB-001 */
+function locateMe(e){
+  if(e) e.preventDefault();
+  if(!navigator.geolocation){
+    alert('Geolocation not available in this browser');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const lat = pos.coords.latitude, lon = pos.coords.longitude;
+    // attach to first device (demo)
+    devices[0].lat = lat; devices[0].lon = lon;
+    updateMapPin(lat, lon);
+    pushEvent(Operator located at ${lat.toFixed(4)}, ${lon.toFixed(4)});
+  }, err=>{
+    alert('Unable to get location: ' + err.message);
+  }, {enableHighAccuracy:true, timeout:8000});
+}
+
+/* very simple map pin visualization (no external map) */
+function updateMapPin(lat, lon){
+  const map = document.getElementById('map');
+  map.innerHTML = '';
+  const info = document.createElement('div');
+  info.style.textAlign='center';
+  info.innerHTML = <div style="font-weight:700">${devices[0].name}</div><div style="color:var(--muted);font-size:13px">${lat.toFixed(5)}, ${lon.toFixed(5)}</div>;
+  // fake animated marker
+  const marker = document.createElement('div'); marker.style.width='18px'; marker.style.height='18px'; marker.style.borderRadius='50%'; marker.style.background='radial-gradient(circle,#ff6b35,#b23a27)'; marker.style.margin='8px auto 10px'; marker.style.boxShadow='0 6px 18px rgba(255,107,53,0.2)'; marker.style.animation='bounce 1.6s infinite';
+  marker.style.display='block';
+  map.appendChild(marker);
+  map.appendChild(info);
+  map.style.justifyContent='flex-start';
+  map.style.alignItems='center';
+  map.style.flexDirection='column';
+  map.style.display='flex';
+}
+window.addEventListener('load', ()=>renderDevices());
+
+/* small CSS animation injection */
+const style = document.createElement('style');
+style.textContent = @keyframes bounce{0%{transform:translateY(0)}50%{transform:translateY(-8px)}100%{transform:translateY(0)}};
+document.head.appendChild(style);
+
+/* pulse effect */
+function flashPulse(color='#ff6b35', times=2){
+  const wrap = document.getElementById('pulseWrap');
+  let i=0;
+  const orig = wrap.style.boxShadow;
+  const iv = setInterval(()=>{
+    wrap.style.boxShadow = 0 0 ${14 + i*6}px ${color}44, inset 0 0 ${14 + i*6}px ${color}55;
+    i++;
+    if(i>times){ clearInterval(iv); wrap.style.boxShadow = orig; }
+  }, 400);
+}
+
+/* clear dashboard */
+function clearAll(){
+  globalStatus.className='status-pill status-safe';
+  globalStatus.textContent='All systems nominal';
+  activeAlerts = 0; statAlerts.textContent = activeAlerts;
+  pushEvent('Operator cleared alerts');
+}
+
+/* -----------------------
+   Pairing / QR canvas
+   ----------------------- */
+function generatePairCode(){
+  const code = 'PAIR-' + Math.random().toString(36).substring(2,9).toUpperCase();
+  drawPairCanvas(code);
+  pushEvent(Generated pairing code: ${code});
+}
+function drawPairCanvas(text='PAIR-XXXXX'){
+  const c = qrCanvas; const w = c.width = c.clientWidth * devicePixelRatio; const h = c.height = 140 * devicePixelRatio;
+  const ctx = c.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  // background
+  ctx.fillStyle = '#07121a'; ctx.fillRect(0,0,c.clientWidth,140);
+  // pseudo-qr: random blocks
+  for(let y=10;y<120;y+=18){
+    for(let x=12;x<c.clientWidth-12;x+=18){
+      ctx.fillStyle = Math.random()>0.75 ? '#ff6b35' : (Math.random()>0.82 ? '#ffb86b' : '#07202a');
+      ctx.fillRect(x,y,12,12);
+    }
+  }
+  // center label
+  ctx.fillStyle = '#e6eef8'; ctx.font = '14px system-ui'; ctx.textAlign='center';
+  ctx.fillText('Pairing Code', c.clientWidth/2, 36);
+  ctx.fillStyle = '#ff6b35'; ctx.font='18px system-ui';
+  ctx.fillText(text, c.clientWidth/2, 64);
+  ctx.fillStyle = '#98a0b3'; ctx.font='12px system-ui';
+  ctx.fillText('Scan or type this into the wristband app', c.clientWidth/2, 92);
+}
+function simulatePair(){
+  const id = 'WB-' + (100 + devices.length);
+  devices.push({ id, name: Wristband — Guest ${devices.length+1}, online:true, lat:null, lon:null});
+  renderDevices();
+  pushEvent(Simulated pairing: ${id});
+}
+
+/* -----------------------
+   Auto-escalation logic
+   ----------------------- */
+let escalationTimer = null;
+function scheduleEscalation(){
+  const delay = parseInt(document.getElementById('escalationDelay').value,10);
+  if(!delay){ pushEvent('Auto-escalation is disabled'); return; }
+  pushEvent(Auto-escalation scheduled in ${delay} seconds);
+  if(escalationTimer) clearTimeout(escalationTimer);
+  escalationTimer = setTimeout(()=>{
+    pushEvent('Auto-escalation: contacting primary contact', 'danger');
+    callPrimary();
+    sendSMS();
+    escalationTimer = null;
+  }, delay * 1000);
+}
+
+/* small UX: generate initial QR */
+generatePairCode();
+
+/* Expose a couple functions for debugging in console */
+window._debug = { devices, pushEvent, simulateWarning, simulateEmergency, triggerSOS };
+</script>
+</body>
+</html>
